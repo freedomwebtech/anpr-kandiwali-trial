@@ -1,0 +1,1 @@
+sudo rm /usr/lib/python3.13/EXTERNALLY-MANAGED
