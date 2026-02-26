@@ -1,1 +1,653 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>PlateVision — License Plate Monitor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #060a0f;
+      --surface:  #0c1219;
+      --border:   #1a2a3a;
+      --amber:    #f59e0b;
+      --amber2:   #fbbf24;
+      --cyan:     #22d3ee;
+      --green:    #10b981;
+      --red:      #ef4444;
+      --text:     #cbd5e1;
+      --muted:    #475569;
+      --plate-bg: #0f1f10;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 15px;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    /* Scanline overlay */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; z-index: 999;
+      background: repeating-linear-gradient(
+        to bottom,
+        transparent 0px,
+        transparent 3px,
+        rgba(0,0,0,0.08) 3px,
+        rgba(0,0,0,0.08) 4px
+      );
+      pointer-events: none;
+    }
+
+    /* ── HEADER ── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 28px;
+      height: 64px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      position: relative;
+      overflow: hidden;
+    }
+    header::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--amber), transparent);
+    }
+
+    .logo {
+      display: flex; align-items: center; gap: 14px;
+    }
+    .logo-icon {
+      width: 36px; height: 36px;
+      border: 2px solid var(--amber);
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+      color: var(--amber);
+      position: relative;
+      animation: pulse-border 3s ease-in-out infinite;
+    }
+    @keyframes pulse-border {
+      0%,100% { box-shadow: 0 0 6px var(--amber); }
+      50%      { box-shadow: 0 0 18px var(--amber), 0 0 30px rgba(245,158,11,0.3); }
+    }
+    .logo-text {
+      font-family: 'Orbitron', monospace;
+      font-size: 20px;
+      font-weight: 900;
+      letter-spacing: 2px;
+      color: #fff;
+    }
+    .logo-text span { color: var(--amber); }
+
+    .header-status {
+      display: flex; align-items: center; gap: 28px;
+    }
+    .status-pill {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 12px;
+      font-family: 'Share Tech Mono', monospace;
+      letter-spacing: 1px;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+    .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 8px var(--green);
+      animation: blink 1.8s ease-in-out infinite;
+    }
+    .dot.amber { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    #clock {
+      font-family: 'Orbitron', monospace;
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--amber);
+      letter-spacing: 2px;
+    }
+
+    /* ── LAYOUT ── */
+    .layout {
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      gap: 0;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* ── CAMERA PANEL ── */
+    .cam-panel {
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      border-right: 1px solid var(--border);
+    }
+
+    .panel-label {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 10px;
+      letter-spacing: 3px;
+      color: var(--muted);
+      text-transform: uppercase;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .panel-label::before {
+      content: '';
+      display: inline-block;
+      width: 16px; height: 1px;
+      background: var(--amber);
+    }
+
+    .cam-wrapper {
+      position: relative;
+      background: #000;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .cam-wrapper img {
+      width: 640px;
+      height: 480px;
+      display: block;
+      object-fit: cover;
+    }
+
+    /* Corner brackets */
+    .cam-wrapper::before, .cam-wrapper::after {
+      content: '';
+      position: absolute;
+      width: 20px; height: 20px;
+      z-index: 10;
+    }
+    .cam-wrapper::before {
+      top: 8px; left: 8px;
+      border-top: 2px solid var(--amber);
+      border-left: 2px solid var(--amber);
+    }
+    .cam-wrapper::after {
+      top: 8px; right: 8px;
+      border-top: 2px solid var(--amber);
+      border-right: 2px solid var(--amber);
+    }
+    .cam-corners-bottom::before, .cam-corners-bottom::after {
+      content: '';
+      position: absolute;
+      width: 20px; height: 20px;
+    }
+    .cam-corners-bottom::before {
+      bottom: 8px; left: 8px;
+      border-bottom: 2px solid var(--amber);
+      border-left: 2px solid var(--amber);
+    }
+    .cam-corners-bottom::after {
+      bottom: 8px; right: 8px;
+      border-bottom: 2px solid var(--amber);
+      border-right: 2px solid var(--amber);
+    }
+
+    .cam-overlay {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      background: linear-gradient(to top, rgba(0,0,0,.7) 0%, transparent 100%);
+      padding: 16px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+    }
+    .cam-label {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 11px;
+      color: var(--amber);
+      letter-spacing: 2px;
+    }
+    .rec-badge {
+      display: flex; align-items: center; gap: 6px;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 10px;
+      color: var(--red);
+      letter-spacing: 1px;
+    }
+    .rec-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--red);
+      box-shadow: 0 0 8px var(--red);
+      animation: blink 1s ease-in-out infinite;
+    }
+
+    /* Stats bar */
+    .stats-bar {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 14px 16px;
+      position: relative;
+      overflow: hidden;
+    }
+    .stat-card::after {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: var(--amber);
+    }
+    .stat-value {
+      font-family: 'Orbitron', monospace;
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--amber);
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+    .stat-label {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+
+    /* ── SIDEBAR ── */
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      background: var(--surface);
+    }
+
+    .sidebar-header {
+      padding: 20px 20px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .sidebar-title {
+      font-family: 'Orbitron', monospace;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      color: var(--cyan);
+    }
+    .count-badge {
+      background: rgba(34,211,238,0.1);
+      border: 1px solid rgba(34,211,238,0.3);
+      border-radius: 20px;
+      padding: 2px 10px;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 11px;
+      color: var(--cyan);
+    }
+
+    .plates-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .plates-list::-webkit-scrollbar { width: 4px; }
+    .plates-list::-webkit-scrollbar-track { background: var(--bg); }
+    .plates-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    /* Plate Card */
+    .plate-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 14px 16px;
+      position: relative;
+      overflow: hidden;
+      animation: slide-in 0.35s cubic-bezier(0.16,1,0.3,1) both;
+      cursor: default;
+      transition: border-color 0.2s, transform 0.2s;
+    }
+    .plate-card:hover {
+      border-color: var(--amber);
+      transform: translateX(-3px);
+    }
+    .plate-card::before {
+      content: '';
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 3px;
+      background: var(--green);
+    }
+    .plate-card.new::before { background: var(--amber); }
+
+    @keyframes slide-in {
+      from { opacity: 0; transform: translateX(20px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+
+    .plate-number {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: 4px;
+      color: #fff;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+      /* Plate-like styling */
+      background: linear-gradient(135deg, #0f1a0f, #162316);
+      border: 1px solid rgba(16,185,129,0.4);
+      border-radius: 4px;
+      padding: 8px 14px;
+      text-align: center;
+      text-shadow: 0 0 12px rgba(16,185,129,0.6);
+    }
+
+    .plate-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .plate-time {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 11px;
+      color: var(--amber);
+      letter-spacing: 1px;
+    }
+    .plate-date {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 1px;
+    }
+    .plate-id {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 9px;
+      color: var(--muted);
+      letter-spacing: 1px;
+    }
+
+    .tab-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      color: var(--muted);
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 10px;
+      letter-spacing: 1px;
+      padding: 3px 10px;
+      cursor: pointer;
+      text-transform: uppercase;
+      transition: all 0.2s;
+    }
+    .tab-btn.active, .tab-btn:hover {
+      border-color: var(--amber);
+      color: var(--amber);
+    }
+      text-align: center;
+      padding: 60px 20px;
+    }
+    .empty-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+      opacity: 0.3;
+    }
+    .empty-text {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+
+    /* Footer */
+    footer {
+      height: 36px;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+    }
+    .footer-text {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+    #date-display {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 1px;
+    }
+
+    /* Pulse animation for new detection */
+    @keyframes flash-border {
+      0%   { border-color: var(--amber); box-shadow: 0 0 20px rgba(245,158,11,0.5); }
+      100% { border-color: var(--border); box-shadow: none; }
+    }
+    .flash { animation: flash-border 1.5s ease-out forwards; }
+  </style>
+</head>
+<body>
+
+  <!-- ── HEADER ── -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon">⬡</div>
+      <div class="logo-text">Plate<span>Vision</span></div>
+    </div>
+    <div class="header-status">
+      <div class="status-pill"><div class="dot"></div> Live Detection</div>
+      <div class="status-pill"><div class="dot amber"></div> RPi CAM-01</div>
+      <div id="clock">00:00:00</div>
+    </div>
+  </header>
+
+  <!-- ── MAIN LAYOUT ── -->
+  <div class="layout">
+
+    <!-- Camera + Stats -->
+    <div class="cam-panel">
+      <div class="panel-label">Live Camera Feed</div>
+
+      <div class="cam-wrapper cam-corners-bottom">
+        <img id="live-feed" src="/video_feed" alt="Live Camera Feed" />
+        <div class="cam-overlay">
+          <div class="cam-label">CAM-01 // RPi MAIN</div>
+          <div class="rec-badge"><div class="rec-dot"></div> REC</div>
+        </div>
+      </div>
+
+      <div class="stats-bar">
+        <div class="stat-card">
+          <div class="stat-value" id="total-count">0</div>
+          <div class="stat-label">Plates Detected</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" style="color:var(--cyan);font-size:18px;" id="last-plate">—</div>
+          <div class="stat-label">Last Detected</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" style="color:var(--green);font-size:18px;" id="uptime">00:00</div>
+          <div class="stat-label">Session Uptime</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sidebar: Plate Log -->
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-title">DETECTION LOG</div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="tab-btn active" onclick="switchTab('live')">Live</button>
+          <button class="tab-btn" onclick="switchTab('history')">History</button>
+          <div class="count-badge" id="count-badge">0 plates</div>
+        </div>
+      </div>
+      <div class="plates-list" id="plates-list">
+        <div class="empty-state" id="empty-state">
+          <div class="empty-icon">⬡</div>
+          <div class="empty-text">Awaiting detection...</div>
+        </div>
+      </div>
+      <div class="plates-list" id="history-list" style="display:none;">
+        <div class="empty-state">
+          <div class="empty-icon">⬡</div>
+          <div class="empty-text" id="history-empty">Loading history...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── FOOTER ── -->
+  <footer>
+    <div class="footer-text">PlateVision v1.0 — Raspberry Pi LPR System</div>
+    <div id="date-display">Loading...</div>
+  </footer>
+
+<script>
+  // ── Clock ──
+  function updateClock() {
+    const now = new Date();
+    const h = String(now.getHours()).padStart(2,'0');
+    const m = String(now.getMinutes()).padStart(2,'0');
+    const s = String(now.getSeconds()).padStart(2,'0');
+    document.getElementById('clock').textContent = `${h}:${m}:${s}`;
+    document.getElementById('date-display').textContent =
+      now.toLocaleDateString('en-GB',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
+  }
+  setInterval(updateClock, 1000);
+  updateClock();
+
+  // ── Uptime ──
+  const startTime = Date.now();
+  setInterval(() => {
+    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+    const mm = String(Math.floor(elapsed / 60)).padStart(2,'0');
+    const ss = String(elapsed % 60).padStart(2,'0');
+    document.getElementById('uptime').textContent = `${mm}:${ss}`;
+  }, 1000);
+
+  // ── Tab Switching ──
+  function switchTab(tab) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    event.target.classList.add('active');
+    if (tab === 'live') {
+      document.getElementById('plates-list').style.display = '';
+      document.getElementById('history-list').style.display = 'none';
+    } else {
+      document.getElementById('plates-list').style.display = 'none';
+      document.getElementById('history-list').style.display = '';
+      loadHistory();
+    }
+  }
+
+  async function loadHistory() {
+    try {
+      const res = await fetch('/api/history');
+      const rows = await res.json();
+      const list = document.getElementById('history-list');
+      list.innerHTML = '';
+      if (rows.length === 0) {
+        list.innerHTML = '<div class="empty-state"><div class="empty-icon">⬡</div><div class="empty-text">No records yet</div></div>';
+        return;
+      }
+      rows.forEach(p => {
+        const card = document.createElement('div');
+        card.className = 'plate-card';
+        card.innerHTML = `
+          <div class="plate-number">${p.plate}</div>
+          <div class="plate-meta">
+            <div>
+              <div class="plate-time">${p.time}</div>
+              <div class="plate-date">${p.date}</div>
+            </div>
+            <div class="plate-id">ID #${p.track_id}</div>
+          </div>`;
+        list.appendChild(card);
+      });
+    } catch(e) { console.warn('History fetch error:', e); }
+  }
+  let knownIds = new Set();
+  let lastPlateText = '—';
+
+  function buildCard(p, isNew) {
+    const card = document.createElement('div');
+    card.className = 'plate-card' + (isNew ? ' new' : '');
+    card.id = `plate-${p.id}`;
+    card.innerHTML = `
+      <div class="plate-number">${p.plate}</div>
+      <div class="plate-meta">
+        <div>
+          <div class="plate-time">${p.time}</div>
+          <div class="plate-date">${p.date}</div>
+        </div>
+        <div class="plate-id">ID #${p.id}</div>
+      </div>
+    `;
+    return card;
+  }
+
+  async function fetchPlates() {
+    try {
+      const res = await fetch('/api/plates');
+      const plates = await res.json();
+
+      if (plates.length === 0) return;
+
+      const list = document.getElementById('plates-list');
+      const empty = document.getElementById('empty-state');
+      if (empty) empty.remove();
+
+      let newCount = 0;
+      for (const p of plates) {
+        if (!knownIds.has(p.id)) {
+          knownIds.add(p.id);
+          const card = buildCard(p, true);
+          list.prepend(card);
+          // Flash the sidebar wrapper
+          card.classList.add('flash');
+          newCount++;
+          lastPlateText = p.plate;
+        }
+      }
+
+      // Update stats from DB
+      const statsRes = await fetch('/api/stats');
+      const stats = await statsRes.json();
+      document.getElementById('total-count').textContent = stats.total;
+      document.getElementById('count-badge').textContent =
+        `${stats.total} plate${stats.total !== 1 ? 's' : ''}`;
+      if (lastPlateText !== '—') {
+        document.getElementById('last-plate').textContent = lastPlateText;
+      }
+    } catch(e) {
+      console.warn('Fetch error:', e);
+    }
+  }
+
+  setInterval(fetchPlates, 2000);
+  fetchPlates();
+</script>
+</body>
+</html>
