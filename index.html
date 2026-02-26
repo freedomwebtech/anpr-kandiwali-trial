@@ -1,1 +1,505 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>RPi Number Plate Recognition</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #060a0f;
+      --surface: #0c1219;
+      --border:  #1a2a3a;
+      --amber:   #f59e0b;
+      --cyan:    #22d3ee;
+      --green:   #10b981;
+      --red:     #ef4444;
+      --text:    #cbd5e1;
+      --muted:   #475569;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 15px;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    /* Scanline overlay */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; z-index: 999;
+      background: repeating-linear-gradient(
+        to bottom, transparent 0px, transparent 3px,
+        rgba(0,0,0,0.07) 3px, rgba(0,0,0,0.07) 4px
+      );
+      pointer-events: none;
+    }
+
+    /* ══════════════════════════════
+       HEADER
+    ══════════════════════════════ */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      height: 60px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      position: relative;
+      flex-shrink: 0;
+      gap: 12px;
+    }
+    header::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0; right: 0; height: 1px;
+      background: linear-gradient(90deg, transparent, var(--amber), transparent);
+    }
+
+    .logo { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .logo-icon {
+      width: 36px; height: 36px; flex-shrink: 0;
+      border: 2px solid var(--amber); border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 17px; color: var(--amber);
+      animation: pulse-border 3s ease-in-out infinite;
+    }
+    @keyframes pulse-border {
+      0%,100% { box-shadow: 0 0 6px var(--amber); }
+      50%      { box-shadow: 0 0 18px var(--amber), 0 0 30px rgba(245,158,11,0.3); }
+    }
+    .logo-text { font-family: 'Orbitron', monospace; font-weight: 900; color: #fff; line-height: 1.15; min-width: 0; }
+    .logo-sub  { font-size: clamp(8px, 1.5vw, 11px); color: var(--muted); letter-spacing: 3px; text-transform: uppercase; }
+    .logo-main { font-size: clamp(11px, 2vw, 16px); letter-spacing: 1px; }
+    .logo-main span { color: var(--amber); }
+
+    .header-right { display: flex; align-items: center; gap: 16px; flex-shrink: 0; }
+    .status-pills { display: flex; align-items: center; gap: 14px; }
+    .status-pill {
+      display: flex; align-items: center; gap: 6px;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 10px; letter-spacing: 1px;
+      color: var(--muted); text-transform: uppercase; white-space: nowrap;
+    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); animation: blink 1.8s ease-in-out infinite; }
+    .dot.amber { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    #clock { font-family: 'Orbitron', monospace; font-size: clamp(13px, 2vw, 17px); font-weight: 700; color: var(--amber); letter-spacing: 2px; white-space: nowrap; }
+
+    /* ══════════════════════════════
+       LAYOUT — desktop side-by-side
+    ══════════════════════════════ */
+    .layout {
+      display: grid;
+      grid-template-columns: 1fr 360px;
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    /* ── CAMERA PANEL ── */
+    .cam-panel {
+      padding: 16px 20px;
+      display: flex; flex-direction: column; gap: 14px;
+      border-right: 1px solid var(--border);
+      overflow: hidden; min-width: 0;
+    }
+    .panel-label {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 10px; letter-spacing: 3px; color: var(--muted);
+      text-transform: uppercase; display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+    }
+    .panel-label::before { content: ''; display: inline-block; width: 14px; height: 1px; background: var(--amber); }
+
+    .cam-wrapper {
+      position: relative; background: #000;
+      border: 1px solid var(--border); border-radius: 4px;
+      overflow: hidden; aspect-ratio: 4/3; width: 100%; flex-shrink: 0;
+    }
+    .cam-wrapper img { width: 100%; height: 100%; display: block; object-fit: cover; }
+    .cam-wrapper::before {
+      content: ''; position: absolute; top: 8px; left: 8px; width: 18px; height: 18px; z-index: 10;
+      border-top: 2px solid var(--amber); border-left: 2px solid var(--amber);
+    }
+    .cam-wrapper::after {
+      content: ''; position: absolute; top: 8px; right: 8px; width: 18px; height: 18px; z-index: 10;
+      border-top: 2px solid var(--amber); border-right: 2px solid var(--amber);
+    }
+    .cam-corner-bl, .cam-corner-br { position: absolute; width: 18px; height: 18px; z-index: 10; }
+    .cam-corner-bl { bottom: 8px; left: 8px; border-bottom: 2px solid var(--amber); border-left: 2px solid var(--amber); }
+    .cam-corner-br { bottom: 8px; right: 8px; border-bottom: 2px solid var(--amber); border-right: 2px solid var(--amber); }
+    .cam-overlay {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      background: linear-gradient(to top, rgba(0,0,0,.75), transparent);
+      padding: 12px 16px; display: flex; align-items: flex-end; justify-content: space-between;
+    }
+    .cam-label { font-family: 'Share Tech Mono', monospace; font-size: 10px; color: var(--amber); letter-spacing: 2px; }
+    .rec-badge { display: flex; align-items: center; gap: 5px; font-family: 'Share Tech Mono', monospace; font-size: 10px; color: var(--red); letter-spacing: 1px; }
+    .rec-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--red); box-shadow: 0 0 8px var(--red); animation: blink 1s ease-in-out infinite; }
+
+    /* Stats bar */
+    .stats-bar { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; flex-shrink: 0; }
+    .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 12px 14px; position: relative; overflow: hidden; }
+    .stat-card::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--amber); }
+    .stat-value { font-family: 'Orbitron', monospace; font-size: clamp(16px, 2.5vw, 26px); font-weight: 700; color: var(--amber); line-height: 1; margin-bottom: 4px; }
+    .stat-label { font-family: 'Share Tech Mono', monospace; font-size: 9px; color: var(--muted); letter-spacing: 1.5px; text-transform: uppercase; }
+
+    /* ══════════════════════════════
+       SIDEBAR
+    ══════════════════════════════ */
+    .sidebar { display: flex; flex-direction: column; background: var(--surface); min-height: 0; overflow: hidden; }
+    .sidebar-header {
+      padding: 14px 14px 12px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      flex-shrink: 0; gap: 8px; flex-wrap: wrap;
+    }
+    .sidebar-title { font-family: 'Orbitron', monospace; font-size: 11px; font-weight: 700; letter-spacing: 2px; color: var(--cyan); white-space: nowrap; }
+    .sidebar-controls { display: flex; gap: 6px; align-items: center; }
+    .count-badge { background: rgba(34,211,238,0.1); border: 1px solid rgba(34,211,238,0.3); border-radius: 20px; padding: 2px 10px; font-family: 'Share Tech Mono', monospace; font-size: 10px; color: var(--cyan); white-space: nowrap; }
+    .tab-btn { background: none; border: 1px solid var(--border); border-radius: 3px; color: var(--muted); font-family: 'Share Tech Mono', monospace; font-size: 10px; letter-spacing: 1px; padding: 3px 10px; cursor: pointer; text-transform: uppercase; transition: all 0.2s; }
+    .tab-btn.active, .tab-btn:hover { border-color: var(--amber); color: var(--amber); }
+
+    .plates-list { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+    .plates-list::-webkit-scrollbar { width: 3px; }
+    .plates-list::-webkit-scrollbar-track { background: var(--bg); }
+    .plates-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    /* ── Plate Card ── */
+    .plate-card {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+      padding: 12px 14px; position: relative; overflow: hidden;
+      animation: slide-in 0.35s cubic-bezier(0.16,1,0.3,1) both;
+      transition: border-color 0.2s, transform 0.2s;
+    }
+    .plate-card:hover { border-color: var(--amber); transform: translateX(-3px); }
+    .plate-card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--green); }
+    .plate-card.revisit::before { background: var(--cyan); }
+    .plate-card.revisit .plate-number { background: linear-gradient(135deg, #0a1520, #0f1f2e); border-color: rgba(34,211,238,0.4); text-shadow: 0 0 12px rgba(34,211,238,0.6); }
+    @keyframes slide-in { from { opacity:0; transform:translateX(20px); } to { opacity:1; transform:translateX(0); } }
+
+    .plate-number {
+      font-family: 'Share Tech Mono', monospace; font-size: clamp(15px, 2.5vw, 20px);
+      font-weight: 700; letter-spacing: 4px; color: #fff; text-transform: uppercase;
+      background: linear-gradient(135deg, #0f1a0f, #162316);
+      border: 1px solid rgba(16,185,129,0.4); border-radius: 4px;
+      padding: 7px 12px; text-align: center;
+      text-shadow: 0 0 12px rgba(16,185,129,0.6); margin-bottom: 8px;
+    }
+    .plate-meta { display: flex; justify-content: space-between; align-items: center; }
+    .plate-time { font-family: 'Share Tech Mono', monospace; font-size: 11px; color: var(--amber); letter-spacing: 1px; }
+    .plate-date { font-family: 'Share Tech Mono', monospace; font-size: 10px; color: var(--muted); letter-spacing: 1px; }
+    .plate-id   { font-family: 'Share Tech Mono', monospace; font-size: 9px;  color: var(--muted); letter-spacing: 1px; }
+
+    /* Revisit card */
+    .revisit-banner { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; font-family: 'Share Tech Mono', monospace; font-size: 9px; letter-spacing: 2px; color: var(--cyan); text-transform: uppercase; }
+    .revisit-banner::before { content: '↻'; font-size: 11px; }
+    .time-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
+    .time-box { background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 3px; padding: 6px 8px; }
+    .time-box-label { font-family: 'Share Tech Mono', monospace; font-size: 8px; letter-spacing: 1px; color: var(--muted); text-transform: uppercase; margin-bottom: 2px; }
+    .time-box-value { font-family: 'Share Tech Mono', monospace; font-size: 12px; font-weight: 700; }
+    .time-box-value.last { color: var(--muted); }
+    .time-box-value.now  { color: var(--cyan);  }
+    .time-box-date { font-family: 'Share Tech Mono', monospace; font-size: 9px; color: var(--muted); margin-top: 1px; }
+
+    /* Empty state */
+    .empty-state { text-align: center; padding: 50px 20px; }
+    .empty-icon  { font-size: 38px; margin-bottom: 14px; opacity: 0.25; }
+    .empty-text  { font-family: 'Share Tech Mono', monospace; font-size: 10px; color: var(--muted); letter-spacing: 2px; text-transform: uppercase; }
+
+    /* Footer */
+    footer { height: 34px; background: var(--surface); border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 20px; flex-shrink: 0; gap: 10px; }
+    .footer-text { font-family: 'Share Tech Mono', monospace; font-size: 9px; color: var(--muted); letter-spacing: 2px; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #date-display { font-family: 'Share Tech Mono', monospace; font-size: 9px; color: var(--muted); letter-spacing: 1px; white-space: nowrap; }
+
+    /* Flash animation */
+    @keyframes flash-border { 0% { border-color: var(--amber); box-shadow: 0 0 20px rgba(245,158,11,0.5); } 100% { border-color: var(--border); box-shadow: none; } }
+    .flash { animation: flash-border 1.5s ease-out forwards; }
+
+    /* ══════════════════════════════
+       TABLET  ≤ 900px — stack vertically
+    ══════════════════════════════ */
+    @media (max-width: 900px) {
+      .layout {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto 1fr;
+        overflow: auto;
+        height: auto;
+        flex: none;
+      }
+      .cam-panel { border-right: none; border-bottom: 1px solid var(--border); overflow: visible; }
+      .sidebar   { min-height: 400px; }
+      .status-pill:first-child { display: none; }
+    }
+
+    /* ══════════════════════════════
+       MOBILE  ≤ 600px
+    ══════════════════════════════ */
+    @media (max-width: 600px) {
+      header { padding: 8px 12px; height: auto; flex-wrap: wrap; }
+      .logo-sub { display: none; }
+      .status-pills { display: none; }
+      #clock { font-size: 13px; }
+
+      .cam-panel { padding: 12px; gap: 10px; }
+
+      .stats-bar { grid-template-columns: 1fr 1fr; }
+      .stats-bar .stat-card:last-child { grid-column: 1 / -1; }
+
+      .sidebar-header { padding: 10px 12px; }
+      .sidebar-title  { font-size: 10px; }
+      .plates-list    { padding: 8px; gap: 6px; }
+      .plate-number   { font-size: 14px; letter-spacing: 3px; padding: 6px 10px; }
+
+      footer { padding: 0 12px; }
+      #date-display { display: none; }
+      .footer-text  { font-size: 8px; letter-spacing: 1px; }
+    }
+
+    /* ══════════════════════════════
+       VERY SMALL  ≤ 380px
+    ══════════════════════════════ */
+    @media (max-width: 380px) {
+      .stats-bar { grid-template-columns: 1fr; }
+      .stats-bar .stat-card:last-child { grid-column: auto; }
+      .time-compare { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── HEADER ── -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon">⬡</div>
+      <div class="logo-text">
+        <div class="logo-sub">Raspberry Pi</div>
+        <div class="logo-main">Number Plate <span>Recognition</span></div>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="status-pills">
+        <div class="status-pill"><div class="dot"></div> Live</div>
+        <div class="status-pill"><div class="dot amber"></div> RPi CAM-01</div>
+      </div>
+      <div id="clock">00:00:00</div>
+    </div>
+  </header>
+
+  <!-- ── MAIN LAYOUT ── -->
+  <div class="layout">
+
+    <!-- Camera + Stats -->
+    <div class="cam-panel">
+      <div class="panel-label">Live Camera Feed</div>
+
+      <div class="cam-wrapper">
+        <img id="live-feed" src="/video_feed" alt="Live Camera Feed" />
+        <div class="cam-corner-bl"></div>
+        <div class="cam-corner-br"></div>
+        <div class="cam-overlay">
+          <div class="cam-label">CAM-01 // RPi MAIN</div>
+          <div class="rec-badge"><div class="rec-dot"></div> REC</div>
+        </div>
+      </div>
+
+      <div class="stats-bar">
+        <div class="stat-card">
+          <div class="stat-value" id="total-count">0</div>
+          <div class="stat-label">Plates Detected</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" style="color:var(--cyan);font-size:clamp(13px,2vw,18px);" id="last-plate">—</div>
+          <div class="stat-label">Last Detected</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" style="color:var(--green);font-size:clamp(13px,2vw,18px);" id="uptime">00:00</div>
+          <div class="stat-label">Session Uptime</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-title">Detection Log</div>
+        <div class="sidebar-controls">
+          <button class="tab-btn active" onclick="switchTab('live', this)">Live</button>
+          <button class="tab-btn"        onclick="switchTab('history', this)">History</button>
+          <div class="count-badge" id="count-badge">0 plates</div>
+        </div>
+      </div>
+
+      <div class="plates-list" id="plates-list">
+        <div class="empty-state" id="empty-state">
+          <div class="empty-icon">⬡</div>
+          <div class="empty-text">Awaiting detection...</div>
+        </div>
+      </div>
+
+      <div class="plates-list" id="history-list" style="display:none;">
+        <div class="empty-state">
+          <div class="empty-icon">⬡</div>
+          <div class="empty-text">Loading history...</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── FOOTER ── -->
+  <footer>
+    <div class="footer-text">Raspberry Pi Number Plate Recognition System v1.0</div>
+    <div id="date-display">Loading...</div>
+  </footer>
+
+<script>
+  // ── Clock & Date ──
+  function updateClock() {
+    const now = new Date();
+    const h = String(now.getHours()).padStart(2,'0');
+    const m = String(now.getMinutes()).padStart(2,'0');
+    const s = String(now.getSeconds()).padStart(2,'0');
+    document.getElementById('clock').textContent = `${h}:${m}:${s}`;
+    document.getElementById('date-display').textContent =
+      now.toLocaleDateString('en-GB',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
+  }
+  setInterval(updateClock, 1000);
+  updateClock();
+
+  // ── Session Uptime ──
+  const startTime = Date.now();
+  setInterval(() => {
+    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+    const mm = String(Math.floor(elapsed / 60)).padStart(2,'0');
+    const ss = String(elapsed % 60).padStart(2,'0');
+    document.getElementById('uptime').textContent = `${mm}:${ss}`;
+  }, 1000);
+
+  // ── Tab Switching ──
+  function switchTab(tab, btn) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    if (tab === 'live') {
+      document.getElementById('plates-list').style.display  = '';
+      document.getElementById('history-list').style.display = 'none';
+    } else {
+      document.getElementById('plates-list').style.display  = 'none';
+      document.getElementById('history-list').style.display = '';
+      loadHistory();
+    }
+  }
+
+  // ── History Loader ──
+  async function loadHistory() {
+    try {
+      const res  = await fetch('/api/history');
+      const rows = await res.json();
+      const list = document.getElementById('history-list');
+      list.innerHTML = '';
+      if (!rows.length) {
+        list.innerHTML = '<div class="empty-state"><div class="empty-icon">⬡</div><div class="empty-text">No records yet</div></div>';
+        return;
+      }
+      rows.forEach(p => {
+        const card = document.createElement('div');
+        card.className = 'plate-card';
+        card.innerHTML = `
+          <div class="plate-number">${p.plate}</div>
+          <div class="plate-meta">
+            <div>
+              <div class="plate-time">${p.time}</div>
+              <div class="plate-date">${p.date}</div>
+            </div>
+            <div class="plate-id">ID #${p.track_id}</div>
+          </div>`;
+        list.appendChild(card);
+      });
+    } catch(e) { console.warn('History error:', e); }
+  }
+
+  // ── Build Card ──
+  function buildCard(p, isNew) {
+    const card = document.createElement('div');
+    card.className = 'plate-card' + (isNew ? ' new' : '') + (p.revisit ? ' revisit' : '');
+
+    if (p.revisit) {
+      card.innerHTML = `
+        <div class="revisit-banner">Seen Again</div>
+        <div class="plate-number">${p.plate}</div>
+        <div class="time-compare">
+          <div class="time-box">
+            <div class="time-box-label">Last Seen</div>
+            <div class="time-box-value last">${p.last_time || '—'}</div>
+            <div class="time-box-date">${p.last_date || ''}</div>
+          </div>
+          <div class="time-box">
+            <div class="time-box-label">Now</div>
+            <div class="time-box-value now">${p.time}</div>
+            <div class="time-box-date">${p.date}</div>
+          </div>
+        </div>
+        <div style="margin-top:6px;"><span class="plate-id">TRACK ID #${p.id}</span></div>`;
+    } else {
+      card.innerHTML = `
+        <div class="plate-number">${p.plate}</div>
+        <div class="plate-meta">
+          <div>
+            <div class="plate-time">${p.time}</div>
+            <div class="plate-date">${p.date}</div>
+          </div>
+          <div class="plate-id">ID #${p.id}</div>
+        </div>`;
+    }
+    return card;
+  }
+
+  // ── Live Polling ──
+  let knownKeys    = new Set();
+  let lastPlateText = '—';
+
+  async function fetchPlates() {
+    try {
+      const res    = await fetch('/api/plates');
+      const plates = await res.json();
+      if (!plates.length) return;
+
+      const list  = document.getElementById('plates-list');
+      const empty = document.getElementById('empty-state');
+      if (empty) empty.remove();
+
+      for (const p of plates) {
+        const key = p.timestamp + '_' + p.id;
+        if (!knownKeys.has(key)) {
+          knownKeys.add(key);
+          const card = buildCard(p, true);
+          list.prepend(card);
+          card.classList.add('flash');
+          lastPlateText = p.plate;
+        }
+      }
+
+      // Stats from DB
+      const sRes  = await fetch('/api/stats');
+      const stats = await sRes.json();
+      document.getElementById('total-count').textContent = stats.total;
+      document.getElementById('count-badge').textContent = `${stats.total} plate${stats.total !== 1 ? 's' : ''}`;
+      if (lastPlateText !== '—') document.getElementById('last-plate').textContent = lastPlateText;
+    } catch(e) { console.warn('Poll error:', e); }
+  }
+
+  setInterval(fetchPlates, 2000);
+  fetchPlates();
+</script>
+</body>
+</html>
