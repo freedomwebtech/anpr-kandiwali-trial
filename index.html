@@ -1,1 +1,585 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RPi Number Plate Recognition</title>
+
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+
+    <style>
+        :root {
+            --primary:   #667eea;
+            --primary2:  #764ba2;
+            --success:   #10b981;
+            --danger:    #ef4444;
+            --warning:   #f59e0b;
+            --info:      #3b82f6;
+        }
+
+        body {
+            background: #f8f9fa;
+            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        /* ── NAVBAR ── */
+        .navbar {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.15);
+            padding: 10px 20px;
+        }
+        .navbar-brand { font-size: 1.1rem; font-weight: 700; letter-spacing: 0.5px; }
+        .navbar-brand i { font-size: 1.3rem; }
+
+        /* ── CARDS ── */
+        .card {
+            border: none;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.07);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+        }
+        .card-header {
+            border-radius: 15px 15px 0 0 !important;
+            border: none;
+            font-weight: 600;
+        }
+
+        /* ── STAT CARDS ── */
+        .stat-card {
+            background: linear-gradient(135deg, var(--c1), var(--c2));
+            color: white;
+            padding: 22px 24px;
+            border-radius: 15px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .stat-card:hover { transform: translateY(-5px); box-shadow: 0 8px 25px rgba(0,0,0,0.2); }
+        .stat-card .stat-number { font-size: 2.4rem; font-weight: 800; line-height: 1; }
+        .stat-card .stat-label  { font-size: 0.85rem; opacity: 0.9; margin-top: 4px; }
+        .stat-card i { font-size: 3rem; opacity: 0.25; }
+
+        /* ── NAV PILLS ── */
+        .nav-pills .nav-link {
+            border-radius: 25px;
+            padding: 9px 20px;
+            font-weight: 600;
+            color: #6b7280;
+            transition: all 0.3s ease;
+        }
+        .nav-pills .nav-link:hover { background: #e5e7eb; color: #374151; }
+        .nav-pills .nav-link.active {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            box-shadow: 0 4px 10px rgba(102,126,234,0.4);
+        }
+
+        /* ── LIVE FEED ── */
+        .feed-wrapper {
+            background: #000;
+            border-radius: 0 0 15px 15px;
+            overflow: hidden;
+            min-height: 400px;
+            position: relative;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .feed-wrapper img {
+            width: 100%; height: auto; display: block;
+        }
+        .feed-no-signal {
+            text-align: center; color: #6c757d; padding: 60px 20px;
+        }
+        .feed-no-signal i { font-size: 5rem; opacity: 0.4; }
+
+        /* ── PLATE CARD ── */
+        .plate-card {
+            background: white;
+            border-left: 4px solid var(--success);
+            border-radius: 10px;
+            padding: 14px 16px;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+            transition: all 0.3s ease;
+            animation: slideIn 0.4s cubic-bezier(0.16,1,0.3,1) both;
+        }
+        .plate-card:hover { box-shadow: 0 5px 15px rgba(0,0,0,0.1); transform: translateX(5px); }
+        .plate-card.revisit { border-left-color: #3b82f6; }
+        @keyframes slideIn { from { opacity:0; transform:translateX(20px); } to { opacity:1; transform:translateX(0); } }
+
+        .plate-number-display {
+            font-family: 'Courier New', monospace;
+            font-size: 1.3rem;
+            font-weight: 800;
+            letter-spacing: 4px;
+            color: #1f2937;
+            background: linear-gradient(135deg, #f0fdf4, #dcfce7);
+            border: 2px solid #bbf7d0;
+            border-radius: 8px;
+            padding: 8px 16px;
+            text-align: center;
+            margin-bottom: 8px;
+        }
+        .plate-card.revisit .plate-number-display {
+            background: linear-gradient(135deg, #eff6ff, #dbeafe);
+            border-color: #bfdbfe;
+        }
+
+        .plate-meta { font-size: 0.8rem; color: #6b7280; }
+        .plate-meta i { color: #9ca3af; }
+        .badge-time {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white; border-radius: 20px;
+            padding: 3px 10px; font-size: 0.72rem; font-weight: 600;
+        }
+        .badge-revisit {
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            color: white; border-radius: 20px;
+            padding: 3px 10px; font-size: 0.72rem; font-weight: 600;
+        }
+
+        /* Revisit time compare */
+        .time-compare {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;
+        }
+        .time-box {
+            background: #f8fafc; border-radius: 8px;
+            border: 1px solid #e2e8f0; padding: 8px 10px; text-align: center;
+        }
+        .time-box-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; margin-bottom: 3px; }
+        .time-box-value { font-weight: 700; font-size: 0.9rem; color: #374151; }
+        .time-box-value.now { color: #667eea; }
+        .time-box-date { font-size: 0.7rem; color: #94a3b8; }
+
+        /* ── DETECTION LIST SCROLL ── */
+        .detection-scroll {
+            max-height: 500px;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+        .detection-scroll::-webkit-scrollbar { width: 6px; }
+        .detection-scroll::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 10px; }
+        .detection-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .detection-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        /* ── EMPTY STATE ── */
+        .empty-state { text-align: center; padding: 50px 20px; color: #94a3b8; }
+        .empty-state i { font-size: 3.5rem; display: block; margin-bottom: 16px; opacity: 0.4; }
+
+        /* ── BTN CUSTOM ── */
+        .btn-custom {
+            border-radius: 25px; padding: 8px 22px;
+            font-weight: 600; transition: all 0.3s ease;
+        }
+        .btn-custom:hover { transform: translateY(-2px); box-shadow: 0 4px 10px rgba(0,0,0,0.2); }
+        .btn-gradient {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white; border: none; border-radius: 25px;
+            padding: 8px 22px; font-weight: 600; transition: all 0.3s ease;
+        }
+        .btn-gradient:hover { opacity: 0.9; transform: translateY(-2px); box-shadow: 0 6px 15px rgba(102,126,234,0.4); color: white; }
+
+        /* ── HISTORY CARD ── */
+        .history-item {
+            background: white;
+            border-radius: 10px;
+            padding: 14px 16px;
+            margin-bottom: 10px;
+            border-left: 4px solid #10b981;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+            transition: all 0.2s ease;
+        }
+        .history-item:hover { box-shadow: 0 5px 15px rgba(0,0,0,0.1); transform: translateX(4px); }
+
+        /* ── CLOCK ── */
+        #clock-display {
+            font-family: 'Courier New', monospace;
+            font-size: 1.1rem;
+            font-weight: 700;
+            background: rgba(255,255,255,0.15);
+            border-radius: 20px;
+            padding: 4px 16px;
+            letter-spacing: 2px;
+        }
+
+        /* ── FLASH for new card ── */
+        @keyframes flashNew {
+            0%   { box-shadow: 0 0 0 3px rgba(102,126,234,0.6); }
+            100% { box-shadow: 0 2px 6px rgba(0,0,0,0.06); }
+        }
+        .flash-new { animation: flashNew 1.5s ease-out forwards; }
+
+        /* ── RESPONSIVE ── */
+        @media (max-width: 768px) {
+            .stat-card .stat-number { font-size: 1.8rem; }
+            .navbar-brand span.full { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ── NAVBAR ── -->
+    <nav class="navbar navbar-dark">
+        <div class="container-fluid">
+            <span class="navbar-brand mb-0 h1">
+                <i class="bi bi-camera-fill me-2"></i>
+                <span class="full">Raspberry Pi — </span>Number Plate Recognition
+            </span>
+            <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-success">
+                    <i class="bi bi-circle-fill me-1" style="font-size:0.6rem;"></i> Live
+                </span>
+                <div id="clock-display" class="text-white">00:00:00</div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid p-4">
+
+        <!-- ── STAT CARDS ── -->
+        <div class="row g-3 mb-4">
+            <div class="col-6 col-md-4">
+                <div class="stat-card" style="--c1:#3b82f6;--c2:#2563eb;">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="stat-number" id="total-count">0</div>
+                            <div class="stat-label"><i class="bi bi-card-text me-1"></i>Total Plates</div>
+                        </div>
+                        <i class="bi bi-eye-fill"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-4">
+                <div class="stat-card" style="--c1:#10b981;--c2:#059669;">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="stat-number" id="today-count">0</div>
+                            <div class="stat-label"><i class="bi bi-calendar-check me-1"></i>Today</div>
+                        </div>
+                        <i class="bi bi-calendar-check"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-md-4">
+                <div class="stat-card" style="--c1:#f59e0b;--c2:#d97706;">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="stat-number" id="uptime-display">00:00</div>
+                            <div class="stat-label"><i class="bi bi-clock me-1"></i>Session Uptime</div>
+                        </div>
+                        <i class="bi bi-clock-history"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── NAV PILLS ── -->
+        <ul class="nav nav-pills mb-4" id="mainTabs">
+            <li class="nav-item">
+                <button class="nav-link active" onclick="switchTab('live', this)">
+                    <i class="bi bi-camera-video me-1"></i> Live Feed
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link" onclick="switchTab('history', this)">
+                    <i class="bi bi-clock-history me-1"></i> History
+                </button>
+            </li>
+        </ul>
+
+        <!-- ── TAB: LIVE ── -->
+        <div id="tab-live">
+            <div class="row g-4">
+
+                <!-- Camera Feed -->
+                <div class="col-lg-8">
+                    <div class="card">
+                        <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center">
+                            <h6 class="mb-0"><i class="bi bi-camera-video-fill me-2"></i>Live Camera Feed</h6>
+                            <span class="badge bg-light text-danger">
+                                <i class="bi bi-record-fill me-1" style="animation:pulse 1s infinite;"></i> REC
+                            </span>
+                        </div>
+                        <div class="feed-wrapper">
+                            <img id="live-feed" src="/video_feed" alt="Live Feed" />
+                        </div>
+                        <div class="card-footer bg-white d-flex justify-content-between align-items-center py-2">
+                            <div class="d-flex gap-2">
+                                <span class="badge bg-success">CAM-01 // RPi MAIN</span>
+                                <span class="badge bg-secondary" id="date-badge">—</span>
+                            </div>
+                            <small class="text-muted" id="last-seen-footer">Last plate: —</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Live Detection Log -->
+                <div class="col-lg-4">
+                    <div class="card h-100">
+                        <div class="card-header text-white d-flex justify-content-between align-items-center"
+                             style="background:linear-gradient(135deg,#667eea,#764ba2);">
+                            <h6 class="mb-0"><i class="bi bi-list-check me-2"></i>Detection Log</h6>
+                            <span class="badge bg-light text-dark" id="count-badge">0 plates</span>
+                        </div>
+                        <div class="card-body p-2">
+                            <div class="detection-scroll" id="plates-list">
+                                <div class="empty-state" id="empty-state">
+                                    <i class="bi bi-search"></i>
+                                    <p class="mb-0">Awaiting detection...</p>
+                                    <small>Plates will appear here in real time</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ── TAB: HISTORY ── -->
+        <div id="tab-history" style="display:none;">
+            <div class="row g-4">
+                <div class="col-lg-8">
+                    <div class="card">
+                        <div class="card-header text-white d-flex justify-content-between align-items-center"
+                             style="background:linear-gradient(135deg,#667eea,#764ba2);">
+                            <h6 class="mb-0"><i class="bi bi-clock-history me-2"></i>All Detected Plates</h6>
+                            <button class="btn btn-sm btn-light btn-custom" onclick="loadHistory()">
+                                <i class="bi bi-arrow-clockwise"></i> Refresh
+                            </button>
+                        </div>
+                        <div class="card-body p-3">
+                            <div class="detection-scroll" id="history-list">
+                                <div class="empty-state">
+                                    <i class="bi bi-database"></i>
+                                    <p>Loading history...</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-4">
+                    <div class="card">
+                        <div class="card-header bg-info text-white">
+                            <h6 class="mb-0"><i class="bi bi-bar-chart-fill me-2"></i>Summary</h6>
+                        </div>
+                        <div class="card-body">
+                            <ul class="list-group list-group-flush">
+                                <li class="list-group-item d-flex justify-content-between align-items-center border-0 px-0">
+                                    Total Plates in DB
+                                    <span class="badge rounded-pill" style="background:linear-gradient(135deg,#667eea,#764ba2);" id="hist-total">0</span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between align-items-center border-0 px-0">
+                                    Detected Today
+                                    <span class="badge bg-success rounded-pill" id="hist-today">0</span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between align-items-center border-0 px-0">
+                                    Session Uptime
+                                    <span class="badge bg-warning text-dark rounded-pill" id="hist-uptime">00:00</span>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="card mt-3">
+                        <div class="card-header bg-primary text-white">
+                            <h6 class="mb-0"><i class="bi bi-info-circle me-2"></i>About</h6>
+                        </div>
+                        <div class="card-body">
+                            <ol class="ps-3 mb-0 small text-muted">
+                                <li class="mb-2">RPi Camera captures live feed</li>
+                                <li class="mb-2">YOLO detects number plates</li>
+                                <li class="mb-2">OCR reads the plate text via Windows</li>
+                                <li class="mb-2">Plates saved to SQLite database</li>
+                                <li>Revisit detection shown automatically</li>
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Toast Notification -->
+    <div class="position-fixed bottom-0 end-0 p-3" style="z-index:9999;">
+        <div id="toast" class="toast align-items-center text-white border-0" role="alert">
+            <div class="d-flex">
+                <div class="toast-body fw-semibold" id="toast-msg">Plate detected!</div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap 5 JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        // ── Clock ──
+        function updateClock() {
+            const now = new Date();
+            const h = String(now.getHours()).padStart(2,'0');
+            const m = String(now.getMinutes()).padStart(2,'0');
+            const s = String(now.getSeconds()).padStart(2,'0');
+            document.getElementById('clock-display').textContent = `${h}:${m}:${s}`;
+            document.getElementById('date-badge').textContent =
+                now.toLocaleDateString('en-GB',{weekday:'short',day:'2-digit',month:'short',year:'numeric'});
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        // ── Uptime ──
+        const startTime = Date.now();
+        function updateUptime() {
+            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+            const mm = String(Math.floor(elapsed / 60)).padStart(2,'0');
+            const ss = String(elapsed % 60).padStart(2,'0');
+            const val = `${mm}:${ss}`;
+            document.getElementById('uptime-display').textContent = val;
+            document.getElementById('hist-uptime').textContent = val;
+        }
+        setInterval(updateUptime, 1000);
+
+        // ── Tab Switching ──
+        function switchTab(tab, btn) {
+            document.querySelectorAll('.nav-pills .nav-link').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            document.getElementById('tab-live').style.display    = tab === 'live'    ? '' : 'none';
+            document.getElementById('tab-history').style.display = tab === 'history' ? '' : 'none';
+            if (tab === 'history') loadHistory();
+        }
+
+        // ── Toast ──
+        function showToast(msg, type='success') {
+            const el = document.getElementById('toast');
+            const colors = { success:'bg-success', danger:'bg-danger', info:'bg-primary', warning:'bg-warning text-dark' };
+            el.className = `toast align-items-center text-white border-0 ${colors[type] || 'bg-success'}`;
+            document.getElementById('toast-msg').textContent = msg;
+            new bootstrap.Toast(el, {delay:3000}).show();
+        }
+
+        // ── Build Plate Card ──
+        function buildCard(p, isNew) {
+            const card = document.createElement('div');
+            card.className = 'plate-card' + (p.revisit ? ' revisit' : '');
+
+            if (p.revisit) {
+                card.innerHTML = `
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="badge-revisit"><i class="bi bi-arrow-repeat me-1"></i>Seen Again</span>
+                        <small class="text-muted">ID #${p.id}</small>
+                    </div>
+                    <div class="plate-number-display">${p.plate}</div>
+                    <div class="time-compare">
+                        <div class="time-box">
+                            <div class="time-box-label">Last Seen</div>
+                            <div class="time-box-value">${p.last_time || '—'}</div>
+                            <div class="time-box-date">${p.last_date || ''}</div>
+                        </div>
+                        <div class="time-box">
+                            <div class="time-box-label">Now</div>
+                            <div class="time-box-value now">${p.time}</div>
+                            <div class="time-box-date">${p.date}</div>
+                        </div>
+                    </div>`;
+            } else {
+                card.innerHTML = `
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="badge-time"><i class="bi bi-clock me-1"></i>${p.time}</span>
+                        <small class="text-muted">ID #${p.id}</small>
+                    </div>
+                    <div class="plate-number-display">${p.plate}</div>
+                    <div class="plate-meta d-flex justify-content-between">
+                        <span><i class="bi bi-calendar3 me-1"></i>${p.date}</span>
+                        <span><i class="bi bi-check-circle-fill text-success me-1"></i>Captured</span>
+                    </div>`;
+            }
+
+            if (isNew) card.classList.add('flash-new');
+            return card;
+        }
+
+        // ── Live Polling ──
+        let knownKeys     = new Set();
+        let lastPlateText = '—';
+
+        async function fetchPlates() {
+            try {
+                const res    = await fetch('/api/plates');
+                const plates = await res.json();
+                if (!plates.length) return;
+
+                const list  = document.getElementById('plates-list');
+                const empty = document.getElementById('empty-state');
+                if (empty) empty.remove();
+
+                for (const p of plates) {
+                    const key = p.timestamp + '_' + p.id;
+                    if (!knownKeys.has(key)) {
+                        knownKeys.add(key);
+                        list.prepend(buildCard(p, true));
+                        lastPlateText = p.plate;
+                        if (p.revisit) {
+                            showToast(`↻ Plate seen again: ${p.plate}`, 'info');
+                        } else {
+                            showToast(`✓ New plate: ${p.plate}`, 'success');
+                        }
+                    }
+                }
+                document.getElementById('last-seen-footer').textContent = `Last plate: ${lastPlateText}`;
+
+                // Stats
+                const sRes  = await fetch('/api/stats');
+                const stats = await sRes.json();
+                document.getElementById('total-count').textContent   = stats.total;
+                document.getElementById('today-count').textContent   = stats.today || 0;
+                document.getElementById('count-badge').textContent   = `${stats.total} plate${stats.total !== 1 ? 's' : ''}`;
+                document.getElementById('hist-total').textContent    = stats.total;
+                document.getElementById('hist-today').textContent    = stats.today || 0;
+            } catch(e) { console.warn('Poll error:', e); }
+        }
+
+        setInterval(fetchPlates, 2000);
+        fetchPlates();
+
+        // ── History ──
+        async function loadHistory() {
+            const list = document.getElementById('history-list');
+            list.innerHTML = '<div class="empty-state"><i class="bi bi-hourglass-split"></i><p>Loading...</p></div>';
+            try {
+                const res  = await fetch('/api/history');
+                const rows = await res.json();
+                list.innerHTML = '';
+                if (!rows.length) {
+                    list.innerHTML = '<div class="empty-state"><i class="bi bi-database-x"></i><p>No records yet</p></div>';
+                    return;
+                }
+                rows.forEach(p => {
+                    const item = document.createElement('div');
+                    item.className = 'history-item';
+                    item.innerHTML = `
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <span class="badge-time"><i class="bi bi-clock me-1"></i>${p.time}</span>
+                            <small class="text-muted">Track ID #${p.track_id}</small>
+                        </div>
+                        <div class="plate-number-display" style="font-size:1.1rem;">${p.plate}</div>
+                        <div class="plate-meta">
+                            <i class="bi bi-calendar3 me-1"></i>${p.date}
+                        </div>`;
+                    list.appendChild(item);
+                });
+            } catch(e) {
+                list.innerHTML = '<div class="empty-state"><i class="bi bi-exclamation-triangle"></i><p>Failed to load</p></div>';
+            }
+        }
+    </script>
+</body>
+</html>
