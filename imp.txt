@@ -1,0 +1,5 @@
+sudo rm /usr/lib/python3.13/EXTERNALLY-MANAGED
+
+pip3 install torch==2.6.0
+
+pip3 install torchvision==0.21
